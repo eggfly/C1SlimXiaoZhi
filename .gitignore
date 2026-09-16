@@ -1,0 +1,7 @@
+build/
+private/
+*.o
+*.a
+*.wav
+.DS_Store
+docs/probe/
