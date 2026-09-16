@@ -2,7 +2,7 @@
 
 > 状态：方案阶段，**尚未开始编码**。本文是给后续执行者（人或模型）的施工蓝图。
 > 日期：2026-09-16。上游参考版本：`78/xiaozhi-esp32` @ `5d54beb7`（2026-09-16）。
-> 配套文档：[RESEARCH.md](RESEARCH.md)（同类项目调研）、[DEVICE_PROBE.md](DEVICE_PROBE.md)（真机探测清单）。
+> 配套文档：[RESEARCH.md](RESEARCH.md)（同类项目调研）、[MICROPHONE.md](MICROPHONE.md)（麦克风原理与原厂逆向）、[DEVICE_PROBE.md](DEVICE_PROBE.md)（真机探测清单）。
 
 ---
 
@@ -27,19 +27,22 @@
 | Cache | 16 KB I / 16 KB D / 128 KB L2 | 官方规格 |
 | 内存 | 约 **50 MiB 可用**（X1600E 封装内 64 MB LPDDR2；内核+原厂进程占一部分） | 已确认约 50 MiB |
 | 内核 | Linux 5.10.186 MIPS，`PREEMPT`，`CONFIG_MODULES=y`、无模块签名，`/dev/mem` 可用，无 KASLR | 已确认 |
-| 存储 | eMMC ~58 GB：p5 `/usr/resource` 200 MB、p6 `/usr/data` 100 MB（可写，放启动桥/小配置）、p8 `/storage` 57 GB（可写，放大文件）；根分区 ext4 **只读** | 已确认 |
+| 存储 | eMMC ~58 GB：p5 `/usr/resource` 200 MB、p6 `/usr/data` 100 MB（可写，放启动桥/小配置）、**p7 = 根分区**（400 MB，ext4 只读，`root=/dev/mmcblk0p7`，仅剩约 149 MB 可用）、p8 `/storage` 57 GB（可写，放大文件与本程序） | 已确认（勘误：早期文档误记 p7 未挂载） |
 | 屏幕 | 296×152，1bpp 纯黑白，控制器 SSD1680；`/dev/epaper_lcd` 整帧 `write()` 5624 字节；sysfs `/sys/devices/platform/e0266a128/epaper/{fast_refresh_only,refresh,refresh_max,refresh_cnt}`；快刷 ~685 ms/帧，全刷 ~1690 ms | 已确认（EPAPER_REFRESH.md） |
 | 帧格式 | `offset = (y>>3)*296 + x`，`mask = 0x80 >> (y&7)`，黑 = 1 | 已确认 |
 | 键盘 | `/dev/input/event0`（matrix keypad，字母区）+ `/dev/input/event1`（gpio keys：电源 KEY_POWER=116 / KEY_WAKEUP=143、Home、音量等）；MIPS 上 `EVIOCGRAB = 0x80044590` | 已确认 |
 | 音频输出 | ALSA card 0，`aplay -D hw:0,0 -f S16_LE -r 48000 -c 2` 已被 Pinao 验证；混音器 `numid=1,iface=MIXER,name=DAC Playback Volume`，范围 0–158；设备自带 `/usr/bin/aplay`、`amixer`、`/usr/sbin/alsactl`、`/usr/bin/ffplay` | 已确认 |
-| **音频输入（麦克风）** | 未知。X1600 内置 codec 有 ADC，MagicPen 系列（词典笔）大概率有 MIC，但 C1 Slim 是否焊了 MIC、ALSA 是否暴露 capture 设备、支持哪些采样率 **必须真机验证** | **待确认（阻塞项）** |
+| **音频输入（麦克风）** | 存在。ES8326 codec（I2C 0x18）MIC1 输入 → I2S → AIC → ALSA **card 0 device 0**。原厂 `AudioRecorder` 即以 **16 kHz / 单声道 / S16_LE** 从 `hw:0,0` 采集，且**不设置任何 mixer 控件**。详见 [MICROPHONE.md](MICROPHONE.md) | 已从原厂二进制逆向确认；**真机录音未实测** |
+| 音频参考通道 | ALSA card 0 **device 1** = `i2s-tloop`（发送回环），提供播放参考信号，可用于设备侧 AEC | 设备树确认；未实测 |
+| 音频库 | 设备自带 **libopus 1.4**、完整 ffmpeg 58（`libavcodec` 链接 `libopus.so.0`）、`/usr/bin/{aplay,arecord,amixer,ffplay}`、`/usr/sbin/alsactl` | 已确认 |
 | Wi-Fi | `wlan0`，`wpa_supplicant -D nl80211` + `udhcpc`，原厂脚本 `/bin/wifi_up.sh`；C1ancher 已实现完整 Wi-Fi 服务（`C1ancher/src/services/wifi.c`） | 已确认 |
 | TLS 根证书 | 设备原厂 HTTPS 客户端**不校验证书**（root ADB 方案就是利用这点），因此 `/etc/ssl/certs` 很可能为空或不可信 | 待确认；方案默认**内嵌 CA bundle** |
 | 电池 | `/sys/class/power_supply/*`（C1ancher 有读取实现） | 待确认路径 |
 | 启动器约定 | 独占锁 `/dev/shm/c1ancher-external-app.lock`（flock）；启动时 `SIGSTOP` 原厂 `mpenMain`、退出 `SIGCONT`；退出前恢复 `fast_refresh_only`、`refresh_max`、alsactl 状态、等待按键释放；长按 Home 2 s 回 C1Home | 已确认 |
 | 应用形态 | Linux ELF32 MIPS 小端 o32 MIPS32r2 双精度硬浮点 **静态链接**，无沙箱，root 运行 | 已确认 |
 
-**阻塞项只有一个：麦克风/采集。** 若无 MIC，仍可做「键盘文字对话 + TTS 播放」版本（见 §7 备选），但那不是"完整功能"。
+**原先唯一的阻塞项（麦克风是否存在）已解除。** 对原厂 `AudioRecorder` 的反汇编证明采集通路完整，且格式与小智上行要求逐项一致（16 kHz / 单声道 / S16_LE），不需要重采样。
+剩下的是参数标定而非可行性问题：period/buffer 大小、增益与静音阈值、实际信噪比，都要在 Phase 0 真机测一遍。完整证据链见 [MICROPHONE.md](MICROPHONE.md)。
 
 ---
 
@@ -53,7 +56,7 @@
 | WebSocket 传输（协议版本 1/2/3） | `main/protocols/websocket_protocol.cc` | ✅ v1 默认，v2（时间戳，服务端 AEC）与 v3 一并实现 |
 | MQTT + UDP（AES-CTR 加密音频） | `main/protocols/mqtt_protocol.cc` | ✅ 第 3 阶段 |
 | hello / listen / abort / detect / stt / tts / llm / mcp / system / custom / alert 消息 | `main/application.cc` | ✅ 全部 |
-| Opus 16 kHz 单声道 60 ms 上行；下行 24 kHz（或服务端指定），设备侧重采样 | `main/audio/audio_service.cc` | ✅ 解码器直接以硬件采样率（48 kHz）创建，Opus 内建重采样，**不需要 speex resampler**；上行若 ADC 不支持 16 kHz 则 48k→16k 3:1 抽取 |
+| Opus 16 kHz 单声道 60 ms 上行；下行 24 kHz（或服务端指定），设备侧重采样 | `main/audio/audio_service.cc` | ✅ **上行零转换**：ADC 原生就是 16 kHz 单声道 S16_LE，按 960 帧读直接编码。下行用 `opus_decoder_create(48000,…)` 让 Opus 内建重采样输出 48 kHz，再复制成立体声。**全程不需要独立重采样器** |
 | 设备状态机（Starting/WifiConfiguring/Activating/Idle/Connecting/Listening/Speaking/Notifying/Upgrading/AudioTesting/FatalError） | `main/device_state_machine.cc` | ✅ 原样移植 |
 | 监听模式 auto / manual / realtime | `Protocol::SendStartListening` | ✅ auto + manual；realtime 需 AEC，🔶（可选走服务端 AEC v2） |
 | 设备侧 MCP（`self.get_device_status`、`self.audio_speaker.set_volume`、`self.screen.set_theme`…） | `main/mcp_server.cc` | ✅ 原样移植 + C1 专属工具 |
@@ -62,7 +65,7 @@
 | 提示音（ogg/opus：success、exclamation、popup、low_battery、vibration、多语言 activation/upgrade 等） | `main/assets/*.ogg` + `main/audio/demuxer/ogg_demuxer.cc` | ✅ 移植 ogg 解复用器，直接播放上游 ogg |
 | 39 种界面语言 | `main/assets/locales/*` → `lang_config.h` | ✅ 复用生成脚本，先做 zh-CN / en-US |
 | 离线唤醒词（ESP-SR WakeNet/MultiNet） | Xtensa/RISC-V 专用，不可移植 | 🔶 第 4 阶段：microWakeWord (TFLite-Micro C++) 实验；第 1–3 阶段用**按键 push-to-talk** |
-| 设备侧 AEC | ESP-SR AFE | ❌ 无；半双工（等同 ESP32-C3 lite 路径） |
+| 设备侧 AEC | ESP-SR AFE | 🔶 硬件**有**参考信号：card 0 device 1 (`i2s-tloop`) 回环播放信号。可接 speexdsp `speex_echo_*` 或 WebRTC APM 实现设备侧 AEC → 解锁 realtime 全双工。CPU 预算需实测，不进 MVP；MVP 为半双工 |
 | 声纹识别 3D-Speaker | 服务端功能 | ✅ 无需设备工作（随 detect 上传唤醒音频） |
 | 摄像头视觉 | 板级可选 | ❌ |
 | Wi-Fi 配网（热点 / BluFi） | `esp-wifi-connect` | 🔶 复用 C1ancher/原厂 Wi-Fi；应用内只显示状态 |
@@ -107,7 +110,7 @@
 | mbedtls | 3.6.x LTS | TLS 客户端、SHA-1（WS accept）、SHA-256/HMAC、AES-CTR（UDP 音频）、base64 | 裁剪 config：TLS 1.2+1.3 client only，ECDHE/RSA，AES-GCM/ChaCha20，关闭 server side / DTLS / 大部分老算法 |
 | CA bundle | Mozilla `cacert.pem` 当前版 | 验证 xiaozhi.me / tenclass.net | 编译期嵌入（~230 KB）；提供 `--insecure` 开关便于调试自建服务器 |
 | cJSON | 1.7.18 | JSON | 与上游一致，最大化复用代码 |
-| tinyalsa | 2.0.0 | PCM 采集/播放 + mixer | 直接走 `/dev/snd/pcmC0D0{p,c}` ioctl；比 libasound 小两个数量级。备选：`popen("/usr/bin/aplay ...")` 管道（Pinao 已验证） |
+| tinyalsa | 2.0.0 | PCM 采集/播放 + mixer | 直接走 `/dev/snd/pcmC0D0{p,c}` ioctl；比 libasound 小两个数量级。采集用 `pcm_open(0, 0, PCM_IN, …)`，参数见 [MICROPHONE.md](MICROPHONE.md) §4.2。Phase 0 先用设备自带 `/usr/bin/arecord` 做参照基准。播放备选：`popen("/usr/bin/aplay ...")` 管道（Pinao 已验证） |
 | MQTT-C | 1.1.6 | MQTT 3.1.1 客户端 | MIT，单 .c 文件，套自研 TlsSocket |
 | ogg 解复用 | 上游 `ogg_demuxer.cc` | 提示音 | 直接复制 |
 | 字体 | Fusion Pixel 12px（C1Bible/C1Home 已用）、文泉驿 15/16 | 中文/英文/符号 | 沿用 `C1Home/tools/build_font.py` 产出的 `C1FONT1` 格式 |
@@ -199,16 +202,20 @@
 
 ## 6. 分阶段施工计划与验收标准
 
-### Phase 0 — 真机探测（0.5 天，阻塞后续）
+### Phase 0 — 真机参数标定（0.5 天）
 
+麦克风的可行性已由逆向确认（[MICROPHONE.md](MICROPHONE.md)），这一阶段是**标定与证伪**，不再是走向决策。
 按 [DEVICE_PROBE.md](DEVICE_PROBE.md) 执行只读命令，把结果回填到该文档。关键产出：
-1. `arecord -l` / `/proc/asound/pcm` 是否有 capture；`arecord -D hw:0,0 -f S16_LE -r 16000 -c 1 -d 3 /tmp/t.wav` 能否录到人声（adb pull 回来听）。
-2. 可用采样率/声道（`/proc/asound/card0/pcm0c/sub0/hw_params` 或 `arecord --dump-hw-params`）。
-3. `free`、`/proc/cpuinfo`、`cat /sys/devices/system/cpu/cpu0/cpufreq/*`（是否有调频）。
-4. `/etc/ssl` 是否有 CA；`date` 是否准确（TLS 证书有效期校验依赖时间！设备无 RTC 电池时需 NTP/`server_time` 校时）。
-5. `/sys/class/power_supply/`、`/sys/class/net/wlan0/address`、`evtest`/`hexdump /dev/input/event*` 按键码表。
+1. `arecord -D hw:0,0 -f S16_LE -r 16000 -c 1 -d 5 /tmp/t.wav` 录到清晰人声；顺带看最大声道数以判断单麦还是双麦。
+2. `arecord --dump-hw-params` 拿到 period/buffer 的合法范围，定 tinyalsa 的 `period_size`/`period_count`。
+3. `amixer contents` 记录 `ADC Capture Volume`、`ADC PGA Gain Volume`、ALC 三项的**默认值**（原厂不改它们，我们也先不改，但要有基线）。
+4. `cat /proc/asound/pcm` 确认 device 1（`i2s-tloop`）是否真的存在且可采集。
+5. 量安静环境与正常说话的 dB（公式见 MICROPHONE.md §2.6），定自动停止阈值。
+6. `free`、`/proc/cpuinfo`、`cat /sys/devices/system/cpu/cpu0/cpufreq/*`（是否有调频）。
+7. `/etc/ssl` 是否有 CA；`date` 是否准确（TLS 证书有效期校验依赖时间；设备 RTC 靠主电池供电，长期断电后时间会失效，需 NTP 或 OTA 响应的 `server_time` 校时）。
+8. `/sys/class/power_supply/`、`/sys/class/net/wlan0/address`、`evtest`/`hexdump /dev/input/event*` 按键码表。
 
-**通过标准**：录到清晰人声 + 播放正常。否则转 §7 备选路线。
+**通过标准**：录到清晰人声 + 播放正常。若录音全为静音或严重失真，先按 MICROPHONE.md §3 调 `ADC PGA Gain Volume` 与 ALC，仍不行再转 §7 备选路线。
 
 ### Phase 1 — 工具链与依赖（1–2 天）
 
@@ -245,10 +252,11 @@
 
 ## 7. 备选 / 降级路线
 
-- **无麦克风或无 capture 设备**：
-  1. 键盘文字对话——发送 `{"type":"listen","state":"detect","text":"<用户输入>"}`。这是社区服务端（xiaozhi-esp32-server 等）把 detect 文本当作用户输入的惯用法；官方 xiaozhi.me 是否接受需实测。TTS 照常播放。
-  2. 外接 USB 声卡（X1600 有 USB OTG）：内核是否带 `snd-usb-audio` 需查 `/proc/config.gz` 或 `/lib/modules`；内核可加载模块（无签名），可自编译 5.10.186 模块。
-- **libopus 定点性能不足**：换浮点构建（有 FPU）；或把上行帧长改 100/120 ms 降低调用开销（协议允许 `frame_duration` 协商）。
+- **录音质量不可用**（能打开设备但全静音/严重失真，可能性已大幅降低）：
+  1. 先调 `ADC PGA Gain Volume` 与 `ALC Capture Switch`/`Target Level`（见 MICROPHONE.md §3）。
+  2. 键盘文字对话——发送 `{"type":"listen","state":"detect","text":"<用户输入>"}`。这是社区服务端（xiaozhi-esp32-server 等）把 detect 文本当作用户输入的惯用法；官方 xiaozhi.me 是否接受需实测。TTS 照常播放。
+  3. 外接 USB 声卡（X1600 有 USB OTG）：内核是否带 `snd-usb-audio` 需查 `/proc/config.gz` 或 `/lib/modules`；内核可加载模块（无签名），可自编译 5.10.186 模块。
+- **libopus 定点性能不足**（风险低：设备自带 libopus 1.4 且原厂 ffmpeg 在用）：换浮点构建（有 FPU）；或把上行帧长改 100/120 ms 降低调用开销（协议允许 `frame_duration` 协商）。
 - **TLS 太慢**：优先 ChaCha20-Poly1305 套件；X1600 有 AES 硬件但内核未必暴露 `AF_ALG`，不指望。
 - **静态 musl 的 DNS**：musl 不读 `nsswitch`，只读 `/etc/resolv.conf`（udhcpc 会写），够用；备用内置 DoH 不做。
 
@@ -287,7 +295,9 @@ C1SlimXiaoZhi/
 
 | 风险 | 影响 | 缓解 |
 | --- | --- | --- |
-| 无麦克风 / 无 capture | 核心功能不可用 | Phase 0 先验；§7 降级 |
+| 录音质量不达标（全静音/失真） | 核心功能不可用 | 已排除"无麦克风"；Phase 0 实测，先调增益与 ALC，再走 §7 降级 |
+| 音频线程被墨水屏写帧（685 ms/帧）挤掉导致 overrun | 上行丢帧、爆音 | 显示独立线程；音频线程 `SCHED_FIFO`；`period_count=4`（240 ms 缓冲）；`-EPIPE` 必须 `pcm_prepare()` 重试（原厂同款做法） |
+| 照抄 x86 errno 常量 | 错误处理静默失效 | MIPS 的 `ESTRPIPE=92`（非 86）；错误码表以 MIPS 为准 |
 | 时钟不准导致 TLS 证书校验失败 | 无法联网 | 启动时 SNTP（或用 OTA 响应 `server_time`，首连允许 `--insecure` 拿时间再切回严格校验） |
 | 墨水屏 685 ms/帧 | 字幕更新慢、残影 | 逐句更新、节流、状态切换全刷 |
 | 单核抢占：音频线程被显示写帧/TLS 阻塞 | 爆音/丢帧 | 音频线程 `SCHED_FIFO` 或高 nice；ALSA 缓冲 ≥ 200 ms；显示写帧走独立线程 |

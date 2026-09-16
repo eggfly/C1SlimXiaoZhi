@@ -3,7 +3,10 @@
 前提：已获得 root ADB（见 `../C1-Slim-Ports/tools/root-adb/`）。以下命令**只读**，不修改系统分区。
 把输出粘贴到本文档 §3，或保存到 `docs/probe/<日期>/`。
 
-## 1. 必做（决定方案走向）
+> 更新（2026-09-16）：麦克风的**存在性**已通过逆向原厂 `AudioRecorder` 确认，见 [MICROPHONE.md](MICROPHONE.md)。
+> 本清单的第 1 节因此从"决定方案走向"变为"标定参数并证伪"。预期 `hw:0,0` 以 16 kHz 单声道 S16_LE 直接可录，且**不需要预先设置任何 mixer 控件**。
+
+## 1. 必做（标定与证伪）
 
 ```bash
 adb shell 'cat /proc/asound/cards; echo ---; cat /proc/asound/pcm; echo ---; ls -l /dev/snd; echo ---; arecord -l; echo ---; aplay -l'
@@ -85,5 +88,18 @@ adb shell 'ps -o pid,rss,vsz,comm 2>/dev/null || ps; echo ---; cat /proc/$(pidof
 
 ## 4. 判定
 
-- capture 可用且录音清晰 → 走 PLAN.md 主线（Phase 1）。
-- capture 不存在 → 检查 USB audio 内核支持；同时启动 PLAN.md §7 的键盘文字对话路线。
+- 录音清晰 → 走 PLAN.md 主线（Phase 1），把 period/buffer 与 dB 阈值写进代码。
+- 能打开设备但全静音或严重失真 → 按 [MICROPHONE.md](MICROPHONE.md) §3 调 `ADC PGA Gain Volume`、`ALC Capture Switch`、`ALC Capture Target Level`，重测。
+- 设备根本打不开（与逆向结论矛盾，需重新检视）→ 检查 USB audio 内核支持；同时启动 PLAN.md §7 的键盘文字对话路线。
+
+## 5. 与逆向结论的比对项
+
+逐条核对，任何一条对不上都要在 [MICROPHONE.md](MICROPHONE.md) 里记录并修正：
+
+| 逆向结论 | 实测 | 一致？ |
+| --- | --- | --- |
+| card 0 device 0 支持 16000 Hz / 1ch / S16_LE 采集 | | |
+| 不设任何 mixer 控件即可录音 | | |
+| card 0 device 1 (`i2s-tloop`) 存在且可采集 | | |
+| 录音开头约 192 ms 有上电瞬态（原厂静音这一段） | | |
+| 单麦克风（`--dump-hw-params` 最大声道数） | | |
