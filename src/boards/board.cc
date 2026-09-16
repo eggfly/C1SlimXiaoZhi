@@ -108,7 +108,9 @@ std::string Board::GetSystemInfoJson() {
     cJSON* application = cJSON_CreateObject();
     cJSON_AddStringToObject(application, "name", "c1xiaozhi");
     cJSON_AddStringToObject(application, "version", C1XZ_VERSION);
-    cJSON_AddStringToObject(application, "compile_time", __DATE__ " " __TIME__);
+    // Injected by CMake rather than __DATE__/__TIME__, which would make the
+    // build unreproducible. Empty unless -DC1XZ_BUILD_TIME was given.
+    cJSON_AddStringToObject(application, "compile_time", C1XZ_BUILD_TIME);
     cJSON_AddStringToObject(application, "idf_version", SystemInfo::GetKernelVersion().c_str());
     cJSON_AddStringToObject(application, "elf_sha256", "");
     cJSON_AddItemToObject(root, "application", application);

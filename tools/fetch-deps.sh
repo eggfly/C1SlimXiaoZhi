@@ -51,6 +51,17 @@ for entry in "${DEPS[@]}"; do
     rmdir "$DEST/.tmp-$name"
 done
 
+# GNU Unifont, as a .hex bitmap dump. The factory firmware ships the same font
+# family, it covers ASCII and CJK at 8x16 / 16x16, and its licence (GPLv2+ with
+# the font embedding exception) allows embedding the glyphs in a binary.
+if [ ! -f "$DEST/unifont.hex" ] || [ -n "${C1XZ_FORCE_FETCH:-}" ]; then
+    echo "== fetching unifont"
+    curl -fsSL --retry 3 --retry-delay 2 -o "$CACHE/unifont.hex.gz" \
+        https://unifoundry.com/pub/unifont/unifont-16.0.01/font-builds/unifont-16.0.01.hex.gz
+    gunzip -c "$CACHE/unifont.hex.gz" > "$DEST/unifont.hex"
+    echo "   $(wc -l < "$DEST/unifont.hex" | tr -d ' ') glyphs"
+fi
+
 # Trusted roots. The device has no usable trust store of its own, so we compile
 # our own bundle in. Not pinned by hash on purpose: it is expected to change as
 # CAs rotate, and a stale bundle eventually breaks TLS to xiaozhi.me.

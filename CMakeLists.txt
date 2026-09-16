@@ -53,7 +53,8 @@ if(C1XZ_DEVICE)
         ${TP}/tinyalsa/src/mixer.c
         ${TP}/tinyalsa/src/mixer_hw.c
         ${TP}/tinyalsa/src/mixer_plugin.c
-        ${TP}/tinyalsa/src/limits.c)
+        ${TP}/tinyalsa/src/limits.c
+        ${TP}/tinyalsa/src/snd_card_plugin.c)
     target_include_directories(tinyalsa PUBLIC ${TP}/tinyalsa/include)
     # tinyalsa ships its own copy of the ALSA uapi headers, so no kernel
     # headers are needed on the build host.
@@ -123,7 +124,7 @@ else()
 endif()
 
 add_library(c1xz_core STATIC ${CORE_SRC})
-target_include_directories(c1xz_core PUBLIC src)
+target_include_directories(c1xz_core PUBLIC src assets)
 target_link_libraries(c1xz_core PUBLIC
     opus cjson MbedTLS::mbedtls MbedTLS::mbedx509 MbedTLS::mbedcrypto)
 if(C1XZ_DEVICE)
@@ -139,6 +140,12 @@ if(NOT DEFINED C1XZ_VERSION)
     set(C1XZ_VERSION "0.1.0")
 endif()
 target_compile_definitions(c1xz_core PUBLIC C1XZ_VERSION="${C1XZ_VERSION}")
+# Left empty by default so builds are reproducible; pass -DC1XZ_BUILD_TIME=...
+# to stamp a release.
+if(NOT DEFINED C1XZ_BUILD_TIME)
+    set(C1XZ_BUILD_TIME "")
+endif()
+target_compile_definitions(c1xz_core PUBLIC C1XZ_BUILD_TIME="${C1XZ_BUILD_TIME}")
 
 add_executable(c1xiaozhi src/main.cc)
 target_link_libraries(c1xiaozhi PRIVATE c1xz_core)
