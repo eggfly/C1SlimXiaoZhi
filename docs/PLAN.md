@@ -1,4 +1,4 @@
-# C1Xiaozhi 移植方案：在快易典 C1 Slim（MIPS Linux）上运行官方小智
+# C1SlimXiaoZhi 移植方案：在快易典 C1 Slim（MIPS Linux）上运行官方小智
 
 > 状态：方案阶段，**尚未开始编码**。本文是给后续执行者（人或模型）的施工蓝图。
 > 日期：2026-09-16。上游参考版本：`78/xiaozhi-esp32` @ `5d54beb7`（2026-09-16）。
@@ -141,7 +141,7 @@
 
 ---
 
-## 4. 源码复用映射（xiaozhi-esp32 → C1Xiaozhi）
+## 4. 源码复用映射（xiaozhi-esp32 → C1SlimXiaoZhi）
 
 | 上游文件 | 处理 | 备注 |
 | --- | --- | --- |
@@ -257,7 +257,7 @@
 ## 8. 仓库布局（建议）
 
 ```
-C1Xiaozhi/
+C1SlimXiaoZhi/
 ├── README.md
 ├── docs/                 PLAN.md / RESEARCH.md / DEVICE_PROBE.md / PROTOCOL_NOTES.md
 ├── src/

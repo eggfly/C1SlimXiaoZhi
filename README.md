@@ -1,4 +1,4 @@
-# C1Xiaozhi
+# C1SlimXiaoZhi
 
 把官方 [小智 AI 聊天机器人（xiaozhi-esp32）](https://github.com/78/xiaozhi-esp32) 移植到快易典 C1 Slim / MP-D261：
 君正 X1600E（MIPS32r2，1 GHz 单核，约 50 MiB RAM）、Linux 5.10、296×152 黑白墨水屏、实体键盘。
@@ -17,6 +17,7 @@ OTA 激活、WebSocket 与 MQTT+UDP 两种传输、Opus 语音、设备侧 MCP�
 
 ## 相关仓库
 
+- [eggfly/C1SlimXiaoZhi](https://github.com/eggfly/C1SlimXiaoZhi) — 本仓库
 - [eggfly/C1-Slim-Ports](https://github.com/eggfly/C1-Slim-Ports) — 设备资料、墨水屏逆向、已移植应用
 - [fwz233-RE/C1auncher](https://github.com/fwz233-RE/C1auncher) — 设备端启动器与应用开发文档
 - [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) — 上游
