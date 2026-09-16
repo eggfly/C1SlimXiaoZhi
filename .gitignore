@@ -1,7 +1,8 @@
 build/
+build-*/
+third_party/
 private/
 *.o
 *.a
-*.wav
 .DS_Store
 docs/probe/

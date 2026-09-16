@@ -1,0 +1,2 @@
+#!/bin/sh
+exec zig cc -target "${C1XZ_ZIG_TARGET:-mipsel-linux-musleabihf}" -mcpu="${C1XZ_ZIG_CPU:-mips32r2}" "$@"
