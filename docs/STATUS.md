@@ -1,12 +1,40 @@
 # 实现状态：做了什么，验证到什么程度
 
-> 更新于 2026-09-16。**代码从未在真机上运行过**，设备当时不在手边。
-> 下面严格区分「主机测试通过」「交叉编译通过」「仅写完未验证」三种状态。
+> 更新于 2026-09-16。**代码从未在 C1 Slim 真机上运行过**，设备当时不在手边。
+> 下面严格区分「真机验证」「本地端到端验证」「主机单元测试」「仅编译」四种状态。
 
 ## 0. 一句话
 
-完整移植已经写完并能编译出正确的 MIPS 静态 ELF，46 项主机单元测试全过，
-但**没有一行代码在 C1 Slim 上跑过**。真机第一步见 §4。
+完整移植已经写完，能编译出正确的 MIPS 静态 ELF，46 项主机单元测试全过，
+并且在主机上**与本地测试服务器跑通了完整一轮对话**（OTA → WebSocket 握手 →
+hello 协商 → STT → TTS → Opus 上行 → 干净退出）。
+但**没有一行代码在 C1 Slim 硬件上跑过**，真机第一步见 §4。
+
+### 本地端到端验证做到哪一步
+
+`tools/test_server.py` 是一个独立实现的最小小智服务器（WebSocket 部分照 RFC 6455
+重写，不复用客户端代码，两边互为校验）。实测通过的链路：
+
+| 环节 | 观察到的结果 |
+| --- | --- |
+| OTA POST | 头部 `Device-Id` / `Client-Id` / `Activation-Version: 1` 正确，body 含完整系统信息与 `display{monochrome,296,152}` |
+| 配置下发 | 客户端接受 websocket 端点并持久化 |
+| WebSocket 握手 | 升级成功，`Sec-WebSocket-Accept` 摘要双向校验通过 |
+| 设备 hello | `{"version":1,"features":{"mcp":true,"glyph_push":false},"audio_params":{"opus",16000,1,60}}` |
+| 服务器 hello | session 被记录，下行采样率 24000 被接受 |
+| listen | `{"state":"start","mode":"auto"}` |
+| STT | 中文 `测试一下` 正确解析并显示 |
+| TTS | start → sentence_start → stop，状态机 listening → speaking → listening |
+| 半双工 | speaking 期间采集自动关闭，stop 后自动恢复 |
+| Opus 上行 | 连续 125+ 帧；静音段是 1 字节 DTX 帧，说明 DTX 生效 |
+| 退出 | SIGTERM 后干净关闭，服务器侧看到正常断开 |
+
+复现：
+
+```bash
+python3 tools/test_server.py --port 8099 &
+(sleep 2; echo t; sleep 10; echo q) | build/host/c1xiaozhi --ota-url http://127.0.0.1:8099/ota/ -v
+```
 
 ## 1. 产物
 
@@ -25,16 +53,17 @@
 
 | 功能 | 状态 | 验证程度 |
 | --- | --- | --- |
-| OTA 版本检查与配置下发 | 已实现 | 仅编译 |
-| 设备激活（验证码 + 轮询，Activation-Version 1） | 已实现 | 仅编译 |
+| OTA 版本检查与配置下发 | 已实现 | **本地端到端验证通过** |
+| 设备激活（验证码 + 轮询，Activation-Version 1） | 已实现 | 仅编译；测试服务器支持 `--activation-code` 可手工验证 |
 | 激活 Version 2（序列号 + HMAC-SHA256） | 已实现 | 仅编译；密钥存设置文件，**非硬件保护** |
-| 服务器校时 | 已实现 | 仅编译 |
-| WebSocket 传输 | 已实现 | 仅编译；握手与掩码逻辑无单测 |
-| 二进制协议 v1 / v2 / v3 | 已实现 | 仅编译 |
+| 服务器校时 | 已实现 | **本地端到端验证通过** |
+| WebSocket 传输 | 已实现 | **本地端到端验证通过**（握手、摘要、掩码、分片、ping/pong） |
+| 二进制协议 v1 / v2 / v3 | 已实现 | v1 **本地端到端验证通过**；v2/v3 仅编译 |
 | MQTT + UDP 传输 | 已实现 | 仅编译 |
 | UDP 音频 AES-128-CTR 加解密 | 已实现 | 仅编译 |
 | UDP 序号防重放 | 已实现 | 仅编译 |
-| hello / listen / abort / stt / tts / llm / mcp / system / alert / goodbye | 已实现 | 仅编译 |
+| hello / listen / stt / tts / llm | 已实现 | **本地端到端验证通过** |
+| abort / mcp / system / alert / goodbye | 已实现 | 仅编译 |
 | Opus 16 kHz 单声道 60 ms 上行 | 已实现 | **主机测试通过** |
 | 下行解码到 48 kHz（免独立重采样器） | 已实现 | **主机测试通过** |
 | 设备状态机 | 逐字移植 | **主机测试通过**（7 项） |
@@ -99,8 +128,10 @@
 
 ## 6. 没做的事
 
-- 没有在真机上编译、安装或运行过。
-- 没有连过真实的 xiaozhi 服务器，握手、激活、对话全都没跑通过。
+- 没有在 C1 Slim 真机上安装或运行过。
+- 没有连过真实的 xiaozhi.me 服务器。本地测试服务器验证了协议形状，但没有验证
+  真实服务端对这些字段的接受度，也没有跑过真实的语音识别与合成。
+- 激活流程只在测试服务器上验证过 202/200 轮询，没有真正绑定过账号。
 - 没有测过内存占用。目标是对话中 RSS < 12 MiB，这是估算不是实测。
 - 没有测过功耗与续航。
 - MQTT+UDP 路径连自测都没有，只有编译通过。
